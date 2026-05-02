@@ -1,0 +1,99 @@
+const express = require("express");
+const fetch = require("node-fetch");
+require("dotenv").config();
+
+const cors = require("cors");
+const app = express();
+
+app.use(cors({
+  origin: "*"
+}));
+app.use(express.json());
+
+const PORT = process.env.PORT || 3000;
+
+// Test route
+app.get("/", (req, res) => {
+  res.send("Server is running");
+});
+
+// Create order
+app.post("/create-order", async (req, res) => {
+  try {
+    const { amount, email, phone, name, plan } = req.body;
+
+    const orderId = "order_" + Date.now();
+
+    const response = await fetch("https://api.cashfree.com/pg/orders", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-client-id": process.env.CASHFREE_APP_ID,
+        "x-client-secret": process.env.CASHFREE_SECRET_KEY,
+        "x-api-version": "2022-09-01"
+      },
+      body: JSON.stringify({
+        order_id: orderId,
+        order_amount: amount || 99,
+        order_currency: "INR",
+        customer_details: {
+          customer_id: "user_" + Date.now(),
+          customer_email: email || "customer@email.com",
+          customer_phone: phone || "9999999999",
+          customer_name: name || "Customer"
+        },
+        order_meta: {
+          return_url: "https://vansh-chaang.github.io/Myweb/index.html?payment=success&order_id={order_id}&token={order_token}&plan=" + (plan || "resume")
+        }
+      })
+    });
+
+    const data = await response.json();
+
+    if (data.payment_session_id) {
+      res.json(data);
+    } else {
+      console.error("Cashfree error:", data);
+      res.status(500).json({ error: "Failed to create order", details: data });
+    }
+
+  } catch (err) {
+    console.error("Server error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Validate token after payment
+app.post("/validate-token", async (req, res) => {
+  try {
+    const { order_id, token } = req.body;
+
+    const response = await fetch(
+      `https://api.cashfree.com/pg/orders/${order_id}`,
+      {
+        method: "GET",
+        headers: {
+          "x-client-id": process.env.CASHFREE_APP_ID,
+          "x-client-secret": process.env.CASHFREE_SECRET_KEY,
+          "x-api-version": "2022-09-01"
+        }
+      }
+    );
+
+    const data = await response.json();
+
+    if (data.order_status === "PAID") {
+      res.json({ valid: true });
+    } else {
+      res.json({ valid: false });
+    }
+
+  } catch (err) {
+    console.error("Validate error:", err);
+    res.status(500).json({ valid: false });
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
